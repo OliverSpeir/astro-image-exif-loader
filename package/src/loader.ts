@@ -1,11 +1,11 @@
 import type { Loader } from "astro/loaders";
 import { z } from "astro/zod";
-import type { ZodTypeAny } from "astro/zod";
 import { exiftool } from "exiftool-vendored";
 import { stat } from "fs/promises";
-import { relative, extname, resolve as pathResolve, basename } from "path";
+import { relative, resolve as pathResolve, basename } from "path";
 import { glob as tinyglob } from "tinyglobby";
 import picomatch from "picomatch";
+
 import type {
   ExifToolTagKeys,
   ExifPresets,
@@ -18,9 +18,15 @@ import {
   buildImageData,
 } from "./utils.js";
 
+import type {
+  ExifLoaderOptions,
+  ExifDirectoryOptions,
+  ExifCollectionDefinition,
+} from "./types.js";
+
 function determineTagsToExtract(
   presets: ExifPresets[] = [],
-  tags: ExifToolTagKeys[]
+  tags: ExifToolTagKeys[],
 ): Set<ExifToolTagKeys> {
   const tagsSet = new Set<ExifToolTagKeys>();
 
@@ -37,21 +43,6 @@ function determineTagsToExtract(
   }
 
   return tagsSet;
-}
-
-export interface ExifDirectoryOptions {
-  pattern: string | string[];
-  base?: string;
-}
-
-export interface ExifLoaderOptions {
-  imagesDir?: ExifDirectoryOptions;
-  extensions?: string[];
-  presets?: ExifPresets[];
-  tags?: ExifToolTagKeys[];
-  excludeTags?: ExifToolTagKeys[];
-  extractAll?: boolean;
-  includeRawExif?: boolean;
 }
 
 export function createExifLoader(options: ExifLoaderOptions = {}): Loader {
@@ -79,7 +70,7 @@ export function createExifLoader(options: ExifLoaderOptions = {}): Loader {
       const dirCfg = imagesDir as ExifDirectoryOptions;
       const basePath = pathResolve(
         config.root.pathname,
-        dirCfg.base || "src/content/images"
+        dirCfg.base || "src/content/images",
       );
 
       // Compute patterns
@@ -88,8 +79,8 @@ export function createExifLoader(options: ExifLoaderOptions = {}): Loader {
         : [dirCfg.pattern];
       logger.info(
         `Loading images with EXIF data from ${patterns.join(
-          ", "
-        )} (base: ${basePath})`
+          ", ",
+        )} (base: ${basePath})`,
       );
 
       // Globbing for initial files
@@ -123,7 +114,6 @@ export function createExifLoader(options: ExifLoaderOptions = {}): Loader {
             tagsToExtract,
             excludeTagsSet,
             includeRawExif,
-            basePath
           );
         }
       } catch (error: any) {
@@ -158,7 +148,6 @@ export function createExifLoader(options: ExifLoaderOptions = {}): Loader {
             tagsToExtract,
             excludeTagsSet,
             includeRawExif,
-            basePath
           );
         };
 
@@ -166,8 +155,7 @@ export function createExifLoader(options: ExifLoaderOptions = {}): Loader {
         watcher.on("change", onAddOrChange);
         watcher.on("unlink", (filePath: string) => {
           if (!matches(filePath)) return;
-          const rel = relative(basePath, filePath);
-          const id = rel.replace(extname(rel), "");
+          const id = basename(filePath); // Use just the filename as the id
           store.delete(id);
           logger.info(`File removed: ${filePath}`);
         });
@@ -185,47 +173,28 @@ async function processImage(
   tagsToExtract: Set<ExifToolTagKeys> | null,
   excludeTags: Set<ExifToolTagKeys>,
   includeRawExif: boolean,
-  basePath?: string
 ) {
   try {
-    // Always compute relative path from provided basePath (required) for uniqueness/importing
-    const relFromBase = basePath
-      ? relative(basePath, filePath).replace(/\\/g, "/")
-      : relative(rootPath, filePath).replace(/\\/g, "/");
-    // Determine if file is within the project's src directory for importer support
-    const srcRoot = pathResolve(rootPath, "src");
-    const insideSrc =
-      filePath.startsWith(srcRoot + "/") || filePath === srcRoot;
-    const srcPath = insideSrc
-      ? relative(srcRoot, filePath).replace(/\\/g, "/")
-      : ""; // blank when outside src so importer knows it's not importable
-    const fileNameOnly = basename(relFromBase); // no path in the file name for users
-    const id = relFromBase.replace(extname(relFromBase), "");
+    const fileNameOnly = basename(filePath);
+    const id = fileNameOnly; // Use just the filename as the id
 
-    // Check if file has changed using mtime
     const stats = await stat(filePath);
     const mtime = stats.mtime.toISOString();
-
-    // Check existing entry
     const existingEntry = store.get(id);
     if (existingEntry && existingEntry.data.mtime === mtime) {
       // File hasn't changed, skip processing
       return;
     }
 
-    logger.info(`Processing file: ${relFromBase}`);
-
-    // Extract EXIF data using exiftool-vendored - let exiftool decide if it's supported
     let tags;
     try {
       tags = await exiftool.read(filePath);
     } catch (error: any) {
-      const msg = `EXIF read failed for ${relFromBase}: ${error.message}`;
+      const msg = `EXIF read failed for ${fileNameOnly}: ${error.message}`;
       logger.warn(msg);
       tags = {};
     }
 
-    // Create image data object based on selected fields
     const imageData = buildImageData(
       tags,
       fileNameOnly,
@@ -233,15 +202,9 @@ async function processImage(
       stats.size,
       tagsToExtract,
       excludeTags,
-      includeRawExif
+      includeRawExif,
     );
-    // Preserve full relative path for importing while exposing simple fileName
-    imageData.srcPath = srcPath; // blank if outside src
-
-    // Generate content digest
     const digest = generateDigest(imageData);
-
-    // Store the entry with filePath that Astro can use for asset imports
     const success = store.set({
       id,
       data: imageData,
@@ -250,27 +213,21 @@ async function processImage(
     });
 
     if (success) {
-      logger.info(
-        `Processed ${relFromBase} (${imageData.width || "?"}x${
-          imageData.height || "?"
-        })`
-      );
+      logger.info(`Processed ${fileNameOnly}`);
     } else {
-      logger.debug(`Skipped ${relFromBase} (no changes)`);
+      logger.debug(`Skipped ${fileNameOnly} (no changes)`);
     }
   } catch (error: any) {
     logger.error(`Failed to process image ${filePath}: ${error.message}`);
   }
 }
 
-// Build a Zod schema that matches the selected EXIF tags so Astro provides
-// strong typing for `entry.data`. It's really just meant for the key being available in the IDE, TO DO decide if this should be the atual type from exiftool-vendored 
 export function exifSchema<
   const TSel extends readonly ExifToolTagKeys[] | undefined = undefined,
-  const PSel extends readonly ExifPresets[] | undefined = undefined
+  const PSel extends readonly ExifPresets[] | undefined = undefined,
 >(
   zod: typeof z,
-  _options: Pick<ExifLoaderOptions, "includeRawExif"> = {}
+  _options: Pick<ExifLoaderOptions, "includeRawExif"> = {},
 ): z.ZodObject<
   any,
   any,
@@ -283,7 +240,6 @@ export function exifSchema<
     .object({
       fileName: zod.string(),
       mtime: zod.string(),
-      srcPath: zod.string().optional(),
       rawExif: zod.record(val).optional(),
     })
     .catchall(val);
@@ -293,12 +249,6 @@ export function exifSchema<
     any,
     NarrowedExifData<MaybeUndefinedSelected<TSel, PSel>>
   >;
-}
-
-// Convenience helper: one-liner to define a collection with the loader and matching schema
-export interface ExifCollectionDefinition<S extends ZodTypeAny = ZodTypeAny> {
-  loader: Loader;
-  schema: S;
 }
 
 /**
@@ -315,24 +265,60 @@ export interface ExifCollectionDefinition<S extends ZodTypeAny = ZodTypeAny> {
  *
  * Returns a collection definition with loader and schema for use in Astro content config.
  */
+// Overload for extractAll: true, includeRawExif: true
+export function defineExifCollection<
+  const ESel extends readonly ExifToolTagKeys[] | undefined = undefined,
+>(
+  options: ExifLoaderOptions & { extractAll: true; includeRawExif: true; excludeTags?: ESel }
+): ExifCollectionDefinition<
+  z.ZodObject<any, any, any, import("./types.js").ExtractAllExifData<ESel>>
+>;
+
+// Overload for extractAll: true, includeRawExif: false/undefined
+export function defineExifCollection<
+  const ESel extends readonly ExifToolTagKeys[] | undefined = undefined,
+>(
+  options: ExifLoaderOptions & { extractAll: true; includeRawExif?: false; excludeTags?: ESel }
+): ExifCollectionDefinition<
+  z.ZodObject<any, any, any, import("./types.js").ExtractAllExifDataNoRaw<ESel>>
+>;
+
+// Overload for normal operation with includeRawExif: true
 export function defineExifCollection<
   const TSel extends readonly ExifToolTagKeys[] | undefined = undefined,
   const PSel extends readonly ExifPresets[] | undefined = undefined,
-  O extends Omit<ExifLoaderOptions, "tags" | "presets"> = Omit<
-    ExifLoaderOptions,
-    "tags" | "presets"
-  >
+  const ESel extends readonly ExifToolTagKeys[] | undefined = undefined,
 >(
-  options: O & { tags?: TSel; presets?: PSel } = {} as any
+  options: ExifLoaderOptions & { tags?: TSel; presets?: PSel; excludeTags?: ESel; extractAll?: false; includeRawExif: true }
 ): ExifCollectionDefinition<
   z.ZodObject<
     any,
     any,
     any,
-    NarrowedExifData<MaybeUndefinedSelected<TSel, PSel>>
+    NarrowedExifData<MaybeUndefinedSelected<TSel, PSel>, ESel>
   >
-> {
-  const loader = createExifLoader(options as unknown as ExifLoaderOptions);
-  const schema = exifSchema<TSel, PSel>(z, options);
+>;
+
+// Main function for normal operation (includeRawExif: false/undefined)
+export function defineExifCollection<
+  const TSel extends readonly ExifToolTagKeys[] | undefined = undefined,
+  const PSel extends readonly ExifPresets[] | undefined = undefined,
+  const ESel extends readonly ExifToolTagKeys[] | undefined = undefined,
+>(
+  options: ExifLoaderOptions & { tags?: TSel; presets?: PSel; excludeTags?: ESel; extractAll?: false; includeRawExif?: false } = {} as any,
+): ExifCollectionDefinition<
+  z.ZodObject<
+    any,
+    any,
+    any,
+    import("./types.js").NarrowedExifDataNoRaw<MaybeUndefinedSelected<TSel, PSel>, ESel>
+  >
+>;
+
+// Implementation
+export function defineExifCollection(options: any = {}): any {
+  const loader = createExifLoader(options);
+  const schema = exifSchema(z, options);
   return { loader, schema };
 }
+

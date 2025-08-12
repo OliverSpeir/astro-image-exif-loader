@@ -4,11 +4,10 @@ import { defineExifCollection } from "astro-image-exif-loader";
 const images = defineCollection(
   defineExifCollection({
     imagesDir: { pattern: "**/*", base: "src/content/images" },
-    // Use the new presets and tags API
-    // presets: ["camera"],
-    // Or use specific tags for type safety:
-    extractAll: true,
-    // includeRawExif: true,
+    // extractAll: true,
+    // tags:["Make", "AEXv"],
+    // presets: ["basic"],
+    // excludeTags: [""]
   })
 );
 

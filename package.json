@@ -1,5 +1,14 @@
 {
   "name": "root",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --filter astro-image-exif-loader build",
+    "changeset": "changeset",
+    "ci:version": "changeset version",
+    "ci:publish": "changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.5"
+  }
 }
