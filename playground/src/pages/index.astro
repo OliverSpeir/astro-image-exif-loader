@@ -19,6 +19,6 @@ const images = await imageImporter(await getCollection("images"));
 
     <Image src={images[0].defaultImport!} alt="" width="100" />
     <img src={String(images[0]?.defaultImport?.src)} alt="" width="100" />
-    <p>{images[0].data.fileName}</p>
+    <p>{images[0].data}</p>
   </body>
 </html>
