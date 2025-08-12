@@ -1,6 +1,7 @@
 import type { Tags } from "exiftool-vendored";
+import type { Loader } from "astro/loaders";
+import type { ZodTypeAny } from "astro/zod";
 
-// Type-safe EXIF field keys based on exiftool-vendored Tags interface
 export type ExifToolTagKeys = keyof Tags;
 
 // Predefined presets for common use cases
@@ -80,6 +81,26 @@ export type ExifPresetTagMap = {
     | "Subject"
   >;
 };
+
+export interface ExifDirectoryOptions {
+  pattern: string | string[];
+  base?: string;
+}
+
+export interface ExifLoaderOptions {
+  imagesDir?: ExifDirectoryOptions;
+  extensions?: string[];
+  presets?: ExifPresets[];
+  tags?: ExifToolTagKeys[];
+  excludeTags?: ExifToolTagKeys[];
+  extractAll?: boolean;
+  includeRawExif?: boolean;
+}
+
+export interface ExifCollectionDefinition<S extends ZodTypeAny = ZodTypeAny> {
+  loader: Loader;
+  schema: S;
+}
 
 // Compute the union of tag keys for a set of presets
 export type PresetsToTagUnion<PSel extends readonly ExifPresets[] | undefined> =
@@ -237,9 +258,6 @@ export interface BaseAlwaysFields {
   fileName: string;
   mtime: string;
   FileSize?: number; // we ensure this gets set when requested or needed
-  // Path relative to the project src root (e.g. "content/images/photo.jpg") for importing
-  // Optional: present only when the image is inside the project's /src directory
-  srcPath?: string;
 }
 
 export type UniversalExifData = BaseAlwaysFields & AllSerializedExifTags;
@@ -252,19 +270,56 @@ export type RawExifShape = {
 };
 
 // Narrowed data type based on a readonly tuple of selected tag keys
-export type NarrowedExifData<T extends readonly ExifToolTagKeys[] | undefined> =
-  BaseAlwaysFields &
+export type NarrowedExifData<
+  T extends readonly ExifToolTagKeys[] | undefined,
+  E extends readonly ExifToolTagKeys[] | undefined = undefined
+> = BaseAlwaysFields &
     (T extends readonly any[]
-      ? Pick<AllSerializedExifTags, T[number]>
+      ? E extends readonly ExifToolTagKeys[]
+        ? Omit<Pick<AllSerializedExifTags, T[number]>, E[number]>
+        : Pick<AllSerializedExifTags, T[number]>
       : T extends undefined
         ? {} // No additional EXIF tags when undefined (no presets/tags specified)
-        : AllSerializedExifTags) &
+        : E extends readonly ExifToolTagKeys[]
+          ? Omit<AllSerializedExifTags, E[number]>
+          : AllSerializedExifTags) &
     RawExifShape;
+
+// Type for extractAll mode - includes all EXIF tags
+export type ExtractAllExifData<E extends readonly ExifToolTagKeys[] | undefined = undefined> = 
+  BaseAlwaysFields & 
+  (E extends readonly ExifToolTagKeys[] 
+    ? Omit<AllSerializedExifTags, E[number]>
+    : AllSerializedExifTags) & 
+  RawExifShape;
+
+// Type variations without rawExif
+export type ExtractAllExifDataNoRaw<E extends readonly ExifToolTagKeys[] | undefined = undefined> = 
+  BaseAlwaysFields & 
+  (E extends readonly ExifToolTagKeys[] 
+    ? Omit<AllSerializedExifTags, E[number]>
+    : AllSerializedExifTags);
+
+export type NarrowedExifDataNoRaw<
+  T extends readonly ExifToolTagKeys[] | undefined,
+  E extends readonly ExifToolTagKeys[] | undefined = undefined
+> = BaseAlwaysFields &
+    (T extends readonly any[]
+      ? E extends readonly ExifToolTagKeys[]
+        ? Omit<Pick<AllSerializedExifTags, T[number]>, E[number]>
+        : Pick<AllSerializedExifTags, T[number]>
+      : T extends undefined
+        ? {} // No additional EXIF tags when undefined (no presets/tags specified)
+        : E extends readonly ExifToolTagKeys[]
+          ? Omit<AllSerializedExifTags, E[number]>
+          : AllSerializedExifTags);
 
 // Helper to capture literal tag unions without requiring `as const`
 export function exifTags<T extends readonly ExifToolTagKeys[]>(...tags: T): T {
   return tags;
 }
+
+
 // Helper to infer data type from a collection definition produced by defineExifCollection
 // Usage: type ImageData = InferExifData<typeof collections.images>;
 export type InferExifData<T> = T extends { schema: infer S }
