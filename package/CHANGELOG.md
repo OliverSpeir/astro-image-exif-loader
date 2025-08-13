@@ -1,5 +1,11 @@
 # astro-image-exif-loader
 
+## 0.2.1
+
+### Patch Changes
+
+- e588f48: tesitng releases
+
 ## 0.2.0
 
 ### Minor Changes
