@@ -1,5 +1,11 @@
 # astro-image-exif-loader
 
+## 0.2.2
+
+### Patch Changes
+
+- c6d7760: testing releases again
+
 ## 0.2.1
 
 ### Patch Changes
