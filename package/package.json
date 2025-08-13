@@ -1,7 +1,7 @@
 {
   "name": "astro-image-exif-loader",
   "version": "0.2.2",
-  "description": "Astro content collection loader for extracting EXIF data from images with Astro Assets integration",
+  "description": "Astro content collection loader for extracting EXIF data from images",
   "type": "module",
   "exports": {
     ".": {
@@ -53,7 +53,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/user/astro-image-exif-loader.git"
+    "url": "git+https://github.com/OliverSpeir/astro-image-exif-loader"
   },
   "license": "MIT"
 }
