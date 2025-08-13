@@ -1,5 +1,11 @@
 # astro-image-exif-loader
 
+## 0.2.4
+
+### Patch Changes
+
+- fedaa20: fix README
+
 ## 0.2.3
 
 ### Patch Changes

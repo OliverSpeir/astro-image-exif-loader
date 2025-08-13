@@ -1,6 +1,6 @@
 {
   "name": "astro-image-exif-loader",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Astro content collection loader for extracting EXIF data from images",
   "type": "module",
   "exports": {
